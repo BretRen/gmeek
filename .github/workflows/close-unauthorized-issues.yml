@@ -1,48 +1,48 @@
-name: Close Unauthorized Issues
+name: Manage Issues
 
 on:
   issues:
-    types: [opened]  # 仅在 Issue 被打开时触发
+    types: [opened, edited]
 
 jobs:
-  close_issue:
-    runs-on: ubuntu-latest
-
+  close-issue:
+    name: Close Issues by non-collaborators
+    runs-on: ubuntu-24.04
+    permissions:
+      issues: write  # 允许操作 Issue（包括关闭、编辑等）
+      contents: read # 允许读取内容
     steps:
-      - name: Close Unauthorized Issues
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Close issue if not a collaborator
         uses: actions/github-script@v6
         with:
           script: |
             const issue = context.payload.issue;
-            const issueAuthor = issue.user.login;
-            const repoOwner = context.repo.owner;
+            const title = issue.title;
+            const user = context.payload.sender.login;
 
-            // 获取所有合作者（包括所有者）
-            const { data: collaborators } = await github.rest.repos.listCollaborators({
+            // Check if the user is a collaborator or the owner
+            const collaborators = await github.rest.repos.listCollaborators({
               owner: context.repo.owner,
-              repo: context.repo.repo,
+              repo: context.repo.repo
             });
-            const collaboratorLogins = collaborators.map(collaborator => collaborator.login);
 
-            // 如果 Issue 不是由所有者或合作者创建，则关闭它
-            if (issueAuthor !== repoOwner && !collaboratorLogins.includes(issueAuthor)) {
-              // 关闭 Issue
-              await github.rest.issues.update({
+            const isCollaborator = collaborators.some(collaborator => collaborator.login === user);
+
+            if (!isCollaborator && issue.state !== 'closed') {
+              github.rest.issues.update({
                 owner: context.repo.owner,
                 repo: context.repo.repo,
                 issue_number: issue.number,
-                state: 'closed',
+                state: "closed"
               });
 
-              // 留言提示用户
-              await github.rest.issues.createComment({
+              github.rest.issues.createComment({
                 owner: context.repo.owner,
                 repo: context.repo.repo,
                 issue_number: issue.number,
-                body: '❌ 只有仓库所有者或合作者可以创建 Issue，您的 Issue 已被自动关闭。',
+                body: "🚨 This issue was automatically closed because the creator is not a collaborator."
               });
-            } else {
-              console.log('Issue created by authorized user.');
             }
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
