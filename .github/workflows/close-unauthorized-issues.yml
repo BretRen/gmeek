@@ -1,0 +1,48 @@
+name: Close Unauthorized Issues
+
+on:
+  issues:
+    types: [opened]  # 仅在 Issue 被打开时触发
+
+jobs:
+  close_issue:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Close Unauthorized Issues
+        uses: actions/github-script@v6
+        with:
+          script: |
+            const issue = context.payload.issue;
+            const issueAuthor = issue.user.login;
+            const repoOwner = context.repo.owner;
+
+            // 获取所有合作者（包括所有者）
+            const { data: collaborators } = await github.rest.repos.listCollaborators({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+            });
+            const collaboratorLogins = collaborators.map(collaborator => collaborator.login);
+
+            // 如果 Issue 不是由所有者或合作者创建，则关闭它
+            if (issueAuthor !== repoOwner && !collaboratorLogins.includes(issueAuthor)) {
+              // 关闭 Issue
+              await github.rest.issues.update({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                issue_number: issue.number,
+                state: 'closed',
+              });
+
+              // 留言提示用户
+              await github.rest.issues.createComment({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                issue_number: issue.number,
+                body: '❌ 只有仓库所有者或合作者可以创建 Issue，您的 Issue 已被自动关闭。',
+              });
+            } else {
+              console.log('Issue created by authorized user.');
+            }
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
